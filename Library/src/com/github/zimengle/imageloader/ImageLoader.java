@@ -4,27 +4,20 @@ import java.io.File;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.ThreadPoolExecutor;
 
-import com.github.zimengle.imageloader.Image.Dimen;
+import com.github.zimengle.imageloader.Image.Size;
 
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory.Options;
-import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Handler;
-import android.util.Log;
 import android.view.View;
+import android.view.ViewTreeObserver.OnDrawListener;
 import android.widget.ImageView;
 
 /**
@@ -54,11 +47,15 @@ public class ImageLoader {
 	private Drawable loadBitmap;
 
 	//全局resize的大小
-	private Dimen size;
+	private Size size;
 
 	private Context context;
 	
 	private boolean pause;
+	
+	private File httpCacheDir;
+	
+	private Options bitmapOptions;
 	
 	/**
 	 * 任务线程内部类
@@ -126,55 +123,87 @@ public class ImageLoader {
 
 		private ImageView imageView;
 
-		private String path;
-
 		private Image image;
 
 		private Runnable uiRunnable;
 		
+		private Options options;
+		
 		private boolean cancel = false;
 		
-		//主动生成Options对象,在decode时候主动取消decode
-		private Options bitmapOptions;
-
-		public WorkItem(ImageView imageView, String path) {
+		private LoadListener loadListener;
+		
+		public WorkItem(ImageView imageView, File localFile,Size size,Options options,LoadListener loadListener) {
+			if(size == null){
+				size = ImageLoader.this.size;
+			}
+			if(options == null){
+				options =  ImageLoader.this.bitmapOptions;
+			}
+			this.options = options;
 			this.imageView = imageView;
-			this.path = path;
+			this.image = new LocalImage(context,localFile,size,options);
+			this.loadListener = loadListener;
 		}
+		
+		public WorkItem(ImageView imageView, HttpURLConnection conn,File diskFile,Size size,Options options,HttpLoaderListener loadListener) {
+			if(size == null){
+				size = ImageLoader.this.size;
+			}
+			if(diskFile == null && httpCacheDir != null){
+				diskFile = new File(httpCacheDir,""+conn.getURL().toString().hashCode());
+			}
+			if(options == null){
+				options =  ImageLoader.this.bitmapOptions;
+			}
+			this.imageView = imageView;
+			this.options = options;
+			this.image = new HttpImage(context, conn, diskFile, size, options);
+			this.loadListener = loadListener;
+			if(loadListener != null){
+				((HttpImage)image).setDownloadListener(loadListener.getDownloadListener());
+			}
+		}
+		
+		
 
-		public void run() throws OutOfMemoryError,IOException{
-			bitmapOptions = new Options();
+		private void run() throws OutOfMemoryError,IOException{
+			
 			//从磁盘缓存中获取图片
-			Bitmap bitmap = imageCache.getBitmapFromDiskCache(path, size, bitmapOptions);
-			if (bitmap == null) {
-				//加载网络图片
-				if (path.startsWith("http://") || path.startsWith("https://")) {
-					try {
-						image = new HttpImage(context, new File(imageCache.getCacheParams().diskDir+"/http",""+path.hashCode()), (HttpURLConnection)new URL(path).openConnection(), size,bitmapOptions);
-					} catch (MalformedURLException e) {
-					} catch (IOException e) {
-						
-					}
-				} else {
-					//加载本地图片
-					image = new LocalImage(context,new File(path), size,bitmapOptions);
+			if(!cancel){
+				if(loadListener != null){
+					loadListener.start();
 				}
-				bitmap = image.getImage();
-			}
-			final Bitmap bm = bitmap;
-			//图片木有被回收的时候才更新,不然会报错
-			if (bitmap != null && !bm.isRecycled()) {
-				uiRunnable = new Runnable() {
+				Bitmap bitmap = imageCache.getBitmapFromDiskCache(image.toString(), size, options);
+				if (bitmap == null) {
+					//加载网络图片
+					bitmap = image.getImage();
+					
+				}
+				final Bitmap bm = bitmap;
+				//图片木有被回收的时候才更新
+				if (bitmap != null && !bm.isRecycled()) {
+					uiRunnable = new Runnable() {
 
-					public void run() {
-						if(!cancel){
-							imageView.setImageBitmap(bm);	
+						public void run() {
+							if(!cancel){
+								imageView.setImageBitmap(bm);	
+							}
 						}
+					};
+					handler.post(uiRunnable);
+					if(size == null){
+						imageCache.addBitmapToMemoryCache(image.toString(), bm);
+					}else{
+						imageCache.addBitmapToCache(image.toString(), bm);
 					}
-				};
-				handler.post(uiRunnable);
-				imageCache.addBitmapFromCache(path, bm);
+					
+				}
+				if(loadListener != null){
+					loadListener.end();
+				}
 			}
+			
 
 		}
 
@@ -185,14 +214,23 @@ public class ImageLoader {
 			if (image != null) {
 				image.cancel();
 			}
-			//如果正在decode,立即停止decode
-			if(bitmapOptions != null){
-				bitmapOptions.requestCancelDecode();
-			}
 			//从hanlder中删除ui更新
 			if (uiRunnable != null) {
 				handler.removeCallbacks(uiRunnable);
 			}
+			if(loadListener != null){
+				loadListener.cancel();
+			}
+		}
+		
+		
+		
+		public Image getImage() {
+			return image;
+		}
+		
+		public ImageView getImageView() {
+			return imageView;
 		}
 
 	}
@@ -213,88 +251,109 @@ public class ImageLoader {
 		}
 	}
 
-	/**
-	 * 
-	 * @param path 如果path是http协议,加载网络图片,如果不是,则加载本地图片
-	 * @param imageView 
-	 * @param loadBitmap 加载提示
-	 */
+	private static interface WorkItemFactory{
+		public WorkItem createWorkItem();
+	}
 	
-	public synchronized void load(String path, ImageView imageView, Drawable loadBitmap) {
+	public synchronized void load(WorkItemFactory factory,Drawable loadBitmap){
 		LogUtils.d(TAG, "workItemCount:"+queue.size());
+		if(loadBitmap == null){
+			loadBitmap = this.loadBitmap;
+		}
+		
+		WorkItem newItem = factory.createWorkItem();
+		ImageView imageView = newItem.getImageView();
+		String key = newItem.getImage().toString();
+		
 		WorkItem item = map.get(imageView);
 		//如果是对象复用的,则立即停止图片加载
 		if(item != null){
 			item.cancel();
 		}
+		
 		//从内存中获取图片
-		Bitmap bitmap = imageCache.getBitmapFromMemoryCache(path, size);
+		Bitmap bitmap = imageCache.getBitmapFromMemoryCache(key, size);
 		if (bitmap != null) {
 			imageView.setImageBitmap(bitmap);
 		} else {
 			//设置图片加载提示
-			if (loadBitmap != null) {
-				imageView.setImageDrawable(loadBitmap);
-			} else {
-				imageView.setImageDrawable(this.loadBitmap);
-			}
+			imageView.setImageDrawable(loadBitmap);
 			
 			synchronized (queue) {
 				queue.remove(item);
-				item = new WorkItem(imageView, path);
-				map.put(imageView, item);
-				queue.add(item);
+				map.put(imageView, newItem);
+				queue.add(newItem);
 				//新增任务,唤醒线程继续执行
 				queue.notifyAll();
 			}
-			
-			
-			
-			
 		}
-
 	}
 
 	/**
-	 * 摧毁
+	 * 
+	 * @param path 加载
+	 * @param imageView 
+	 * @param loadBitmap 加载提示
 	 */
-	public void destory(){
-		for(WorkThread thread : threadPool){
-			thread.quit();
-		}
-		map.clear();
-		synchronized (queue) {
-			queue.clear();
-		}
+	
+	public void load(final ImageView imageView,final File localImage, final Size size,Drawable loadBitmap,final Options options,final LoadListener loadListener) {
+		load(new WorkItemFactory() {
+			
+			public WorkItem createWorkItem() {
+				// TODO Auto-generated method stub
+				return new WorkItem(imageView, localImage, size, options,loadListener);
+			}
+		}, loadBitmap);
 	}
 	
-	/**
-	 * load
-	 * @param path
-	 * @param imageView
-	 * @param bitmap
-	 */
-	public void load(String path, ImageView imageView, Bitmap bitmap) {
-		load(path, imageView, new BitmapDrawable(context.getResources(),bitmap));
+	public void load(final ImageView imageView,final File localImage, final Size size,Drawable loadBitmap,final LoadListener loadListener) {
+		load(imageView,localImage,size,loadBitmap,null,loadListener);
 	}
-
-	/**
-	 * load
-	 * @param path
-	 * @param imageView
-	 * @param resId
-	 */
-	public void load(String path, ImageView imageView, int resId) {
-		load(path, imageView, context.getResources().getDrawable(resId));
+	
+	public void load(final ImageView imageView,final File localImage, final Size size,final LoadListener loadListener){
+		load(imageView,localImage,size,null,null,loadListener);
 	}
-
-	/**
-	 * load
-	 * @param path
-	 * @param imageView
-	 */
-	public void load(String path, ImageView imageView) {
-		load(path, imageView, (Drawable) null);
+	
+	public void load(final ImageView imageView,final File localImage,final LoadListener loadListener){
+		load(imageView,localImage,null,null,null,loadListener);
+	}
+	
+	public void load(final ImageView imageView,final File localImage){
+		load(imageView,localImage,null,null,null,null);
+	}
+	
+	public void load(final ImageView imageView,final HttpURLConnection conn,final Size size,final File saveFile,Drawable loadBitmap,final Options options,final HttpLoaderListener loaderListener){
+		load(new WorkItemFactory() {
+			
+			public WorkItem createWorkItem() {
+				// TODO Auto-generated method stub
+				return new WorkItem(imageView, conn, saveFile, size, options,loaderListener);
+			}
+		},loadBitmap);
+	}
+	
+	public void load(final ImageView imageView,final HttpURLConnection conn,final Size size,final File saveFile,Drawable loadBitmap,final HttpLoaderListener loaderListener){
+		load(imageView,conn,size,saveFile,loadBitmap,null,loaderListener);
+	}
+	
+	public void load(final ImageView imageView,final HttpURLConnection conn,final Size size,final File saveFile,final HttpLoaderListener loaderListener){
+		load(imageView,conn,size,saveFile,null,null,loaderListener);
+	}
+	
+	public void load(final ImageView imageView,final HttpURLConnection conn,final Size size,final HttpLoaderListener loaderListener){
+		load(imageView,conn,size,null,null,null,loaderListener);
+	}
+	
+	public void load(final ImageView imageView,final HttpURLConnection conn,final HttpLoaderListener loaderListener){
+		load(imageView,conn,null,null,null,null,loaderListener);
+	}
+	public void load(final ImageView imageView,final HttpURLConnection conn){
+		load(imageView,conn,null,null,null,null,null);
+	}
+	
+	
+	public void setHttpCacheDir(File httpCacheDir) {
+		this.httpCacheDir = httpCacheDir;
 	}
 
 
@@ -319,7 +378,11 @@ public class ImageLoader {
 	 * @param size
 	 */
 	public void setImageSize(int size) {
-		this.size = new Dimen(size, size);
+		this.size = new Size(size, size);
+	}
+	
+	public void setBitmapOptions(Options bitmapOptions) {
+		this.bitmapOptions = bitmapOptions;
 	}
 
 	/**
@@ -328,7 +391,7 @@ public class ImageLoader {
 	 * @param height
 	 */
 	public void setImageSize(int width, int height) {
-		this.size = new Dimen(width, height);
+		this.size = new Size(width, height);
 	}
 	
 	public void setPause(boolean pause) {
@@ -339,6 +402,19 @@ public class ImageLoader {
 	}
 	public boolean isPause() {
 		return pause;
+	}
+	
+	/**
+	 * 摧毁
+	 */
+	public void destory(){
+		for(WorkThread thread : threadPool){
+			thread.quit();
+		}
+		map.clear();
+		synchronized (queue) {
+			queue.clear();
+		}
 	}
 
 }

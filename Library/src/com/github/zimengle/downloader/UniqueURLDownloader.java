@@ -53,4 +53,9 @@ public class UniqueURLDownloader implements Downloader {
 		return downloader.getURL();
 	}
 
+	public void setDownloadListener(DownloadListener downloadListener) {
+		downloader.setDownloadListener(downloadListener);
+		
+	}
+
 }

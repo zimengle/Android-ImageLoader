@@ -16,16 +16,17 @@ public abstract class Image {
 	 * 带有长宽的尺寸类
 	 * @author zhangzimeng<zhangzimeng01@baidu.com>
 	 */
-	public static class Dimen {
+	public static class Size {
+		
 		public int width;
 		public int height;
 
-		public Dimen(int width, int height) {
+		public Size(int width, int height) {
 			this.width = width;
 			this.height = height;
 		}
 
-		public Dimen(int size) {
+		public Size(int size) {
 			this.width = size;
 			this.height = size;
 		}
@@ -79,5 +80,9 @@ public abstract class Image {
 			bitmap.recycle();
 		}
 	}
+	
+	public abstract String toString();
+	
+	
 
 }

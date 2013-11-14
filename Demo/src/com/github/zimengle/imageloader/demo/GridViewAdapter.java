@@ -1,9 +1,18 @@
 package com.github.zimengle.imageloader.demo;
 
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URL;
 import java.util.List;
 
 
+import com.github.zimengle.downloader.DownloadListener;
+import com.github.zimengle.imageloader.HttpImage;
+import com.github.zimengle.imageloader.HttpLoaderListener;
 import com.github.zimengle.imageloader.ImageLoader;
+import com.github.zimengle.imageloader.LogUtils;
 
 
 
@@ -18,11 +27,14 @@ import android.widget.ImageView;
 
 public class GridViewAdapter extends BaseAdapter{
 	
+	private static final String TAG = "GridViewAdapter";
+	
 	private List<String> list;
 	
 	private Context context;
 	
 	private ImageLoader imageLoader;
+	
 	
 	public GridViewAdapter(Context context,List<String> list) {
 		this.context = context;
@@ -46,7 +58,7 @@ public class GridViewAdapter extends BaseAdapter{
 
 	public View getView(int position, View convertView, ViewGroup parent) {
 		
-		String path = list.get(position);
+		final String path = list.get(position);
 		
 		
 		
@@ -58,7 +70,60 @@ public class GridViewAdapter extends BaseAdapter{
 		
 //		convertView.setTag(position);
 		
-		imageLoader.load(path, (ImageView)convertView);
+		try {
+			HttpURLConnection conn = (HttpURLConnection)new URL(path).openConnection();
+			imageLoader.load((ImageView)convertView,conn,new HttpLoaderListener() {
+				
+				public void start() {
+					LogUtils.d(TAG, "load_start:"+path);
+					
+				}
+				
+				public void end() {
+					LogUtils.d(TAG, "load_end:"+path);
+					
+				}
+				
+				public void cancel() {
+					LogUtils.d(TAG, "load_cancel:"+path);
+					
+				}
+				
+				public DownloadListener getDownloadListener() {
+					// TODO Auto-generated method stub
+					return new DownloadListener(){
+
+						public void start(HttpURLConnection connection) {
+							LogUtils.d(TAG, "http_load_start:"+path);
+							
+						}
+
+						public void transfer(long loaded, long total,
+								HttpURLConnection connection) {
+							LogUtils.d(TAG,"url:"+path+"\nloaded:"+loaded+"\ntotal:"+total);
+							
+						}
+
+						public void success(HttpURLConnection connection) {
+							LogUtils.d(TAG, "http_load_success:"+path);
+							
+						}
+
+						public void cancel(HttpURLConnection connection) {
+							LogUtils.d(TAG, "http_load_cancel:"+path);
+							
+						}
+						
+					};
+				}
+			});
+		} catch (MalformedURLException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 		
 		return convertView;
 	}

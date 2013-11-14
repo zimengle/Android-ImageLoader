@@ -4,6 +4,7 @@ import java.io.File;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.BitmapFactory.Options;
 
 /**
@@ -15,7 +16,7 @@ public class LocalImage extends Image {
 	
 	private File file;
 
-	private Dimen size;
+	private Size size;
 	
 	private Options options;
 	
@@ -30,7 +31,7 @@ public class LocalImage extends Image {
 	 * @param size 生成的尺寸
 	 * @param options 图片选项
 	 */
-	public LocalImage(Context context,File file, Dimen size,Options options) {
+	public LocalImage(Context context,File file, Size size,Options options) {
 		if(options == null){
 			options = new Options();
 		}
@@ -40,7 +41,7 @@ public class LocalImage extends Image {
 		this.options = options;
 	}
 	
-	public LocalImage(Context context,File file, Dimen size) {
+	public LocalImage(Context context,File file, Size size) {
 		this(context,file,size,null);
 	}
 
@@ -52,7 +53,12 @@ public class LocalImage extends Image {
 	protected Bitmap generateImage() throws OutOfMemoryError {
 		Bitmap bitmap = null;
 		if(!cancel){
-			bitmap = BitmapUtils.getThumbnail(context, file.toString(), size.width, size.height,options );
+			if(size == null){
+				options.inJustDecodeBounds = false;
+				bitmap = BitmapFactory.decodeFile(file.toString(),options);
+			}else{
+				bitmap = BitmapUtils.getThumbnail(context, file.toString(), size.width, size.height,options );
+			}
 		}
 		return bitmap;
 	}
@@ -69,6 +75,15 @@ public class LocalImage extends Image {
 		
 		destory();
 
+	}
+
+	@Override
+	public String toString() {
+		return getLocalImage().toString();
+	}
+	
+	public File getLocalImage(){
+		return file;
 	}
 
 	

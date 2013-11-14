@@ -3,8 +3,11 @@ package com.github.zimengle.imageloader;
 import java.io.File;
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URL;
 
 import com.github.zimengle.downloader.DefaultDownloader;
+import com.github.zimengle.downloader.DownloadListener;
 import com.github.zimengle.downloader.Downloader;
 import com.github.zimengle.downloader.UniqueURLDownloader;
 
@@ -23,7 +26,7 @@ public class HttpImage extends Image{
 	
 	private Context context;
 	
-	private Dimen size;
+	private Size size;
 	
 	private File file;
 	
@@ -35,6 +38,8 @@ public class HttpImage extends Image{
 	
 	private boolean cancel = false;
 	
+	private DownloadListener downloadListener;
+	
 	/**
 	 * 构造器
 	 * @param context
@@ -43,9 +48,12 @@ public class HttpImage extends Image{
 	 * @param size 加载尺寸
 	 * @param options 图片选项
 	 */
-	public HttpImage(Context context,File file,HttpURLConnection conn,Dimen size,Options options) {
+	public HttpImage(Context context,HttpURLConnection conn,File file,Size size,Options options) {
 		if(options == null){
 			options = new Options();
+		}
+		if(file == null){
+			file = new File(ImageCache.getDiskCacheDir(context,"http"),""+conn.getURL().toString().hashCode());
 		}
 		this.conn = conn;
 		this.file = file;
@@ -55,12 +63,20 @@ public class HttpImage extends Image{
 	}
 	
 	
-	public HttpImage(Context context,File file,HttpURLConnection conn,Dimen size){
-		this(context,file,conn,size,null);
+	public void setDownloadListener(DownloadListener downloadListener) {
+		this.downloadListener = downloadListener;
 	}
 	
-	public HttpImage(Context context,File file,HttpURLConnection conn){
-		this(context,file,conn,null,null);
+	public HttpImage(Context context,HttpURLConnection conn,File file,Size size){
+		this(context,conn,file,size,null);
+	}
+	
+	public HttpImage(Context context,HttpURLConnection conn,File file){
+		this(context,conn,file,null,null);
+	}
+	
+	public HttpImage(Context context,HttpURLConnection conn){
+		this(context,conn,null,null);
 	}
 	
 	@Override
@@ -68,7 +84,7 @@ public class HttpImage extends Image{
 		Bitmap bitmap = null;
 		if(!cancel){
 			downloader = new UniqueURLDownloader(new DefaultDownloader(conn, file));
-			
+			downloader.setDownloadListener(downloadListener);
 			if(downloader.download()){
 				 image = new LocalImage(context, file, size,options);
 				 bitmap = image.getImage();
@@ -88,6 +104,17 @@ public class HttpImage extends Image{
 		if(image != null){
 			image.cancel();
 		}
+	}
+
+
+	@Override
+	public String toString() {
+		// TODO Auto-generated method stub
+		return getURL().toString();
+	}
+	
+	public URL getURL(){
+		return conn.getURL();
 	}
 
 

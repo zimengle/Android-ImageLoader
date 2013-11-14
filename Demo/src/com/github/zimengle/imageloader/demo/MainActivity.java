@@ -27,7 +27,7 @@ public class MainActivity extends Activity{
 //	        list.add(cursor.getString(0));
 //	    } while (cursor.moveToNext());
 //	    
-	    for(int i = 1;i<=1000;i++){
+	    for(int i = 1;i<=634;i++){
 	    	list.add("https://raw.github.com/zimengle/Static/master/Images/"+i+".jpg");
 	    }
 	    

@@ -27,4 +27,6 @@ public interface Downloader {
 	 */
 	public String getURL();
 	
+	public void setDownloadListener(DownloadListener downloadListener);
+	
 }

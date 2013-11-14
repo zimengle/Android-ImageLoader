@@ -5,7 +5,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
-import com.github.zimengle.imageloader.Image.Dimen;
+import com.github.zimengle.imageloader.Image.Size;
 
 import android.annotation.TargetApi;
 import android.content.Context;
@@ -115,17 +115,34 @@ public class ImageCache {
 		
 	}
 
+	public void addBitmapToMemoryCache(String key,Bitmap bitmap){
+		if(bitmap != null && !bitmap.isRecycled()){
+			if(memoryCache.get(key) == null){
+				memoryCache.put(key, bitmap);
+			}
+		}
+	}
+	
+	public void addBitmapToDiskCache(String key,Bitmap bitmap){
+		if(bitmap != null && !bitmap.isRecycled()){
+			final File file = getDiskCacheFile(key,new Size(bitmap.getWidth(), bitmap.getHeight()));
+			if(!file.exists()){
+				save(file, bitmap);
+			}
+		}
+	}
+	
 	/***
 	 * 添加缓存,包括内存缓存和磁盘缓存
 	 * @param key 
 	 * @param bitmap
 	 */
-	public void addBitmapFromCache(String key,final Bitmap bitmap){
+	public void addBitmapToCache(String key,final Bitmap bitmap){
 		if(bitmap != null && !bitmap.isRecycled()){
 			if(memoryCache.get(key) == null){
 				memoryCache.put(key, bitmap);
 			}
-			final File file = getDiskCacheFile(key,new Dimen(bitmap.getWidth(), bitmap.getHeight()));
+			final File file = getDiskCacheFile(key,new Size(bitmap.getWidth(), bitmap.getHeight()));
 			if(!file.exists()){
 				save(file, bitmap);
 			}
@@ -138,20 +155,20 @@ public class ImageCache {
 	 * @param size
 	 * @return
 	 */
-	public Bitmap getBitmapFromMemoryCache(String key,Dimen size){
+	public Bitmap getBitmapFromMemoryCache(String key,Size size){
 		return memoryCache.get(key);
 	}
 	
 	/**
 	 * 从磁盘中获取缓存图片
 	 * @param key
-	 * @param dimen
+	 * @param Size
 	 * @param bitmapOptions
 	 * @return
 	 */
-	public Bitmap getBitmapFromDiskCache(String key,Dimen dimen,Options bitmapOptions){
+	public Bitmap getBitmapFromDiskCache(String key,Size Size,Options bitmapOptions){
 		Bitmap bitmap = null;
-		File diskCacheFile = getDiskCacheFile(key,dimen);
+		File diskCacheFile = getDiskCacheFile(key,Size);
 		if(diskCacheFile.exists()){
 			if(bitmapOptions == null){
 				 bitmapOptions = new BitmapFactory.Options();
@@ -172,7 +189,7 @@ public class ImageCache {
 	 * @param size
 	 * @return
 	 */
-	private String getFileName(String name,Dimen size){
+	private String getFileName(String name,Size size){
 		String filename = name;
 		if(size != null){
 			filename += "_"+size.width+"*"+size.height;
@@ -186,7 +203,7 @@ public class ImageCache {
 	 * @param size
 	 * @return
 	 */
-	private File getDiskCacheFile(String key,Dimen size){
+	private File getDiskCacheFile(String key,Size size){
 		
 		return new File(cacheParams.diskDir,getFileName(key,size)+"."+cacheParams.format);
 	}
