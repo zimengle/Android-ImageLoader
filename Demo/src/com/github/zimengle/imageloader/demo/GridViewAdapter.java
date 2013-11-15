@@ -18,12 +18,14 @@ import com.github.zimengle.imageloader.LogUtils;
 
 
 import android.content.Context;
+import android.os.Handler;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.BaseAdapter;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 
 public class GridViewAdapter extends BaseAdapter{
 	
@@ -34,6 +36,8 @@ public class GridViewAdapter extends BaseAdapter{
 	private Context context;
 	
 	private ImageLoader imageLoader;
+	
+	private Handler handler = new Handler();
 	
 	
 	public GridViewAdapter(Context context,List<String> list) {
@@ -55,36 +59,73 @@ public class GridViewAdapter extends BaseAdapter{
 	public long getItemId(int position) {
 		return position;
 	}
+	
+	private static class ViewHolder{
+		public ImageView imageView;
+		public ProgressBar bar;
+	}
 
 	public View getView(int position, View convertView, ViewGroup parent) {
 		
 		final String path = list.get(position);
 		
 		
-		
+		ViewHolder holder = null;
 		if(convertView == null){
 			convertView = LayoutInflater.from(context).inflate(R.layout.image, null);
+			holder = new ViewHolder();
+			holder.imageView = (ImageView) convertView.findViewById(R.id.img);
+			holder.bar = (ProgressBar) convertView.findViewById(R.id.progress);
+			convertView.setTag(holder);
+		}else{
+			holder = (ViewHolder) convertView.getTag();
 		}
 		
-		imageLoader.setLoadBitmap(R.drawable.ic_launcher);
+		final ImageView imageView = holder.imageView;
 		
-//		convertView.setTag(position);
+		final ProgressBar progressBar = holder.bar;
 		
+		progressBar.setVisibility(View.GONE);
+		
+//		imageLoader.setLoadBitmap(R.drawable.ic_launcher);
+
 		try {
 			HttpURLConnection conn = (HttpURLConnection)new URL(path).openConnection();
-			imageLoader.load((ImageView)convertView,conn,new HttpLoaderListener() {
+			imageLoader.load((ImageView)imageView,conn,new HttpLoaderListener() {
 				
 				public void start() {
+					handler.post(new Runnable() {
+						
+						public void run() {
+							progressBar.setVisibility(View.VISIBLE);
+							progressBar.setProgress(0);
+							
+						}
+					});
 					LogUtils.d(TAG, "load_start:"+path);
 					
 				}
 				
 				public void end() {
+					handler.post(new Runnable() {
+						
+						public void run() {
+							progressBar.setVisibility(View.GONE);
+							
+						}
+					});
 					LogUtils.d(TAG, "load_end:"+path);
 					
 				}
 				
 				public void cancel() {
+					handler.post(new Runnable() {
+						
+						public void run() {
+							progressBar.setVisibility(View.GONE);
+							
+						}
+					});
 					LogUtils.d(TAG, "load_cancel:"+path);
 					
 				}
@@ -94,12 +135,22 @@ public class GridViewAdapter extends BaseAdapter{
 					return new DownloadListener(){
 
 						public void start(HttpURLConnection connection) {
+							
+//							
 							LogUtils.d(TAG, "http_load_start:"+path);
 							
 						}
 
-						public void transfer(long loaded, long total,
+						public void transfer(final long loaded, final long total,
 								HttpURLConnection connection) {
+							handler.post(new Runnable() {
+								
+								public void run() {
+									progressBar.setProgress((int)(loaded/total));
+									
+								}
+							});
+							
 							LogUtils.d(TAG,"url:"+path+"\nloaded:"+loaded+"\ntotal:"+total);
 							
 						}
@@ -110,6 +161,7 @@ public class GridViewAdapter extends BaseAdapter{
 						}
 
 						public void cancel(HttpURLConnection connection) {
+							
 							LogUtils.d(TAG, "http_load_cancel:"+path);
 							
 						}
